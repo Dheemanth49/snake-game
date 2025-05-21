@@ -104,7 +104,11 @@ class Game {
             'ArrowUp': 'up',
             'ArrowDown': 'down',
             'ArrowLeft': 'left',
-            'ArrowRight': 'right'
+            'ArrowRight': 'right',
+            'w': 'up',
+            's': 'down',
+            'a': 'left',
+            'd': 'right'
         };
 
         const newDirection = keyActions[event.key];
