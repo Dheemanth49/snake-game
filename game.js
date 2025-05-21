@@ -1,9 +1,10 @@
 class Snake {
-    constructor() {
+    constructor(gridSize) {
+        this.gridSize = gridSize;
         this.body = [
-            { x: 10, y: 10 },
-            { x: 9, y: 10 },
-            { x: 8, y: 10 }
+            { x: Math.floor(gridSize / 2), y: Math.floor(gridSize / 2) },
+            { x: Math.floor(gridSize / 2) - 1, y: Math.floor(gridSize / 2) },
+            { x: Math.floor(gridSize / 2) - 2, y: Math.floor(gridSize / 2) }
         ];
         this.direction = 'right';
         this.nextDirection = 'right';
@@ -13,11 +14,20 @@ class Snake {
     move(food) {
         const head = { ...this.body[0] };
 
+        // Wrap around edges
         switch (this.direction) {
-            case 'up': head.y--; break;
-            case 'down': head.y++; break;
-            case 'left': head.x--; break;
-            case 'right': head.x++; break;
+            case 'up': 
+                head.y = (head.y - 1 + this.gridSize) % this.gridSize;
+                break;
+            case 'down': 
+                head.y = (head.y + 1) % this.gridSize;
+                break;
+            case 'left': 
+                head.x = (head.x - 1 + this.gridSize) % this.gridSize;
+                break;
+            case 'right': 
+                head.x = (head.x + 1) % this.gridSize;
+                break;
         }
 
         this.body.unshift(head);
@@ -47,12 +57,8 @@ class Snake {
         this.direction = this.nextDirection;
     }
 
-    checkCollision(gridSize) {
+    checkCollision() {
         const head = this.body[0];
-        if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
-            return true;
-        }
-
         for (let i = 1; i < this.body.length; i++) {
             if (head.x === this.body[i].x && head.y === this.body[i].y) {
                 return true;
@@ -68,7 +74,12 @@ class Game {
         this.ctx = this.canvas.getContext('2d');
         this.gridSize = 20;
         this.tileSize = this.canvas.width / this.gridSize;
-        this.snake = new Snake();
+        
+        // Ensure canvas size matches grid size
+        this.canvas.width = this.gridSize * this.tileSize;
+        this.canvas.height = this.gridSize * this.tileSize;
+        
+        this.snake = new Snake(this.gridSize);
         this.food = this.generateFood();
         this.score = 0;
         this.gameLoop = null;
@@ -76,6 +87,12 @@ class Game {
         this.deltaTime = 0;
         this.timeStep = 150; // Base time step in milliseconds
         this.isGameOver = false;
+        this.smoothness = 0.2; // Smoothing factor for movement
+        this.snakeSpeed = 10; // Base speed multiplier
+        this.foodGlow = true; // Food glow effect toggle
+        this.foodGlowRadius = 0; // Current glow radius
+        this.foodGlowMax = 10; // Maximum glow radius
+        this.foodGlowSpeed = 0.5; // Glow speed
 
         document.getElementById('startBtn').addEventListener('click', () => this.startGame());
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
@@ -105,13 +122,15 @@ class Game {
             'ArrowDown': 'down',
             'ArrowLeft': 'left',
             'ArrowRight': 'right',
-            'w': 'up',
-            's': 'down',
-            'a': 'left',
-            'd': 'right'
+            'W': 'up',
+            'S': 'down',
+            'A': 'left',
+            'D': 'right'
         };
 
-        const newDirection = keyActions[event.key];
+        // Convert WASD keys to uppercase
+        const key = event.key.toUpperCase();
+        const newDirection = keyActions[key];
         if (newDirection) {
             event.preventDefault();
             this.snake.changeDirection(newDirection);
@@ -119,29 +138,52 @@ class Game {
     }
 
     draw() {
-        // Clear canvas
-        this.ctx.fillStyle = 'white';
+        // Clear canvas with slight transparency for trail effect
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Calculate interpolation factor
         const alpha = this.gameLoop ? Math.min(1, this.deltaTime / this.timeStep) : 1;
+        const smoothAlpha = Math.pow(alpha, this.smoothness); // Smoother interpolation
 
-        // Draw snake with interpolation
+        // Draw snake with smooth interpolation
         this.snake.body.forEach((segment, index) => {
             const prevPos = this.snake.prevPositions[index] || segment;
-            const x = prevPos.x + (segment.x - prevPos.x) * alpha;
-            const y = prevPos.y + (segment.y - prevPos.y) * alpha;
-
-            this.ctx.fillStyle = index === 0 ? '#2ecc71' : '#27ae60';
+            const x = prevPos.x + (segment.x - prevPos.x) * smoothAlpha;
+            const y = prevPos.y + (segment.y - prevPos.y) * smoothAlpha;
+            
+            // Calculate segment size based on position
+            const size = this.tileSize * (1 - (index / this.snake.body.length) * 0.1);
+            
+            // Create gradient for snake segments
+            const gradient = this.ctx.createLinearGradient(
+                x * this.tileSize, 
+                y * this.tileSize, 
+                (x + 1) * this.tileSize, 
+                (y + 1) * this.tileSize
+            );
+            
+            // Head color
+            if (index === 0) {
+                gradient.addColorStop(0, '#2ecc71');
+                gradient.addColorStop(1, '#27ae60');
+            } 
+            // Tail color
+            else {
+                gradient.addColorStop(0, '#27ae60');
+                gradient.addColorStop(1, '#2ecc71');
+            }
+            
+            this.ctx.fillStyle = gradient;
             this.ctx.fillRect(
                 x * this.tileSize,
                 y * this.tileSize,
-                this.tileSize - 1,
-                this.tileSize - 1
+                size - 1,
+                size - 1
             );
         });
 
-        // Draw food
+        // Draw food with glow effect
         this.ctx.fillStyle = '#e74c3c';
         this.ctx.fillRect(
             this.food.x * this.tileSize,
@@ -149,6 +191,26 @@ class Game {
             this.tileSize - 1,
             this.tileSize - 1
         );
+
+        // Add food glow effect
+        if (this.foodGlow) {
+            this.ctx.beginPath();
+            this.ctx.arc(
+                (this.food.x + 0.5) * this.tileSize,
+                (this.food.y + 0.5) * this.tileSize,
+                this.foodGlowRadius,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.fillStyle = `rgba(231, 76, 60, 0.2)`;
+            this.ctx.fill();
+            
+            // Update glow radius
+            this.foodGlowRadius += this.foodGlowSpeed;
+            if (this.foodGlowRadius > this.foodGlowMax) {
+                this.foodGlowRadius = 0;
+            }
+        }
     }
 
     update() {
@@ -172,11 +234,14 @@ class Game {
     }
 
     startGame() {
+        // Stop any existing game loop
         if (this.gameLoop) {
             cancelAnimationFrame(this.gameLoop);
+            this.gameLoop = null;
         }
 
-        this.snake = new Snake();
+        // Reset game state
+        this.snake = new Snake(this.gridSize);
         this.food = this.generateFood();
         this.score = 0;
         this.isGameOver = false;
@@ -184,23 +249,31 @@ class Game {
         this.timeStep = 150;
         this.lastTime = performance.now();
         this.deltaTime = 0;
+        this.foodGlowRadius = 0;
 
-        const gameStep = (currentTime) => {
-            if (!this.gameLoop) return;
+        // Clear the canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.draw();
 
-            this.deltaTime += currentTime - this.lastTime;
-            this.lastTime = currentTime;
+        // Start the game loop
+        const gameLoop = (timestamp) => {
+            if (this.isGameOver) return;
 
+            const deltaTime = timestamp - this.lastTime;
+            this.lastTime = timestamp;
+            this.deltaTime += deltaTime;
+
+            // Fixed time step game loop
             while (this.deltaTime >= this.timeStep) {
                 this.update();
                 this.deltaTime -= this.timeStep;
             }
 
             this.draw();
-            this.gameLoop = requestAnimationFrame(gameStep);
+            this.gameLoop = requestAnimationFrame(gameLoop);
         };
 
-        this.gameLoop = requestAnimationFrame(gameStep);
+        this.gameLoop = requestAnimationFrame(gameLoop);
         document.getElementById('startBtn').textContent = 'Restart Game';
     }
 
@@ -230,5 +303,16 @@ class Game {
 
 // Initialize game when window loads
 window.onload = () => {
-    new Game();
+    const game = new Game();
+    // Start the game automatically
+    game.startGame();
+    
+    // Focus the canvas for keyboard input
+    game.canvas.focus();
+    
+    // Make sure the canvas can receive keyboard events
+    game.canvas.setAttribute('tabindex', '0');
+    
+    // Add event listener to the canvas for better keyboard focus
+    game.canvas.addEventListener('keydown', (e) => game.handleKeyPress(e));
 };
